@@ -429,3 +429,26 @@ describe("isTestCommand", () => {
     assert.strictEqual(isTestCommand("npm start"), false);
   });
 });
+
+describe("recordToolResult — failed test command", () => {
+  it("a failed test still resets turnsSinceLastTest (the agent did run a test)", () => {
+    const state = makeState({ turnsSinceLastTest: 20, consecutiveFailures: 0 });
+    recordToolResult(state, "bash", "npx jest", true);
+    assert.strictEqual(state.turnsSinceLastTest, 0, "failed test should reset turnsSinceLastTest");
+    assert.strictEqual(state.consecutiveFailures, 1, "failed test should still increment failures");
+  });
+
+  it("a failed non-test command does NOT reset turnsSinceLastTest", () => {
+    const state = makeState({ turnsSinceLastTest: 20, consecutiveFailures: 0 });
+    recordToolResult(state, "bash", "npm run build", true);
+    assert.strictEqual(state.turnsSinceLastTest, 20, "non-test failure keeps turnsSinceLastTest");
+    assert.strictEqual(state.consecutiveFailures, 1);
+  });
+
+  it("a failed edit/write does not affect turnsSinceLastTest", () => {
+    const state = makeState({ turnsSinceLastTest: 15, consecutiveFailures: 0 });
+    recordToolResult(state, "edit", undefined, true);
+    assert.strictEqual(state.turnsSinceLastTest, 15);
+    assert.strictEqual(state.consecutiveFailures, 1);
+  });
+});

@@ -201,6 +201,9 @@ export function isTestCommand(command: string): boolean {
 
 /**
  * Update state after a tool result. Consecutive failures reset on any success.
+ * A failed test command still counts as "the agent ran a test" — it resets
+ * turnsSinceLastTest (so the agent isn't nagged to run tests it just ran)
+ * while still incrementing consecutiveFailures (a failure is a failure).
  */
 export function recordToolResult(
   state: ReminderState,
@@ -208,16 +211,19 @@ export function recordToolResult(
   command: string | undefined,
   failed: boolean,
 ): void {
+  // A failed test is still a test run — reset the turns-since-test counter
+  // so the agent isn't reminded to run tests it just executed (and failed).
+  // Done before the early return below so failed tests also reset it.
+  if (toolName === "bash" && command && isTestCommand(command)) {
+    state.turnsSinceLastTest = 0;
+  }
+
   if (failed) {
     state.consecutiveFailures++;
     return;
   }
 
   state.consecutiveFailures = 0;
-
-  if (toolName === "bash" && command && isTestCommand(command)) {
-    state.turnsSinceLastTest = 0;
-  }
 }
 
 /**

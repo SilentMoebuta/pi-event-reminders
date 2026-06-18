@@ -7,12 +7,10 @@
 ## 安装
 
 ```bash
-# 方式一：直接加载
-pi -e extensions/pi-event-reminders/index.ts
-
-# 方式二：放入扩展目录（推荐，自动加载）
-cp -r extensions/pi-event-reminders .pi/extensions/
+pi install git:github.com/SilentMoebuta/pi-event-reminders
 ```
+
+> 旧的手动复制（`cp -r`）与 `pi -e` 加载方式已废弃，请使用上面的包安装。
 
 配置文件需放在项目根目录的 `.pi/reminders.json` 中：
 
@@ -32,14 +30,14 @@ before_agent_start 事件触发
 遍历所有提醒规则，检查条件是否满足
     ↓
     ├─ 不满足 → 无操作
-    └─ 满足 → 通过 before_agent_start return 注入合并消息
+    └─ 满足 → 通过 pi.sendMessage({ deliverAs: "steer" }) 注入合并消息（不累积进 session 历史）
               ↓
               设置冷却，避免频繁打扰
 ```
 
 此外，扩展还监听以下事件来维护状态：
 
-- **`tool_result`**：检测测试命令执行（重置 `turnsSinceLastTest`）和工具失败（用 `event.isError` 计数 `consecutiveFailures`）
+- **`tool_result`**：检测测试命令执行（重置 `turnsSinceLastTest`，**失败的测试也算"跑过测试"**——避免 agent 刚跑完失败测试仍被提醒"该跑测试了"）和工具失败（用 `event.isError` 计数 `consecutiveFailures`，任意工具失败均计数；成功即清零）
 - **`session_start`**：加载配置文件，重置所有状态
 
 Token 使用率从 `ctx.getContextUsage()` 读取（返回 `{tokens, contextWindow, percent}`），在 `before_agent_start` 时刷新。提醒消息通过 `pi.sendMessage(..., { deliverAs: "steer" })` 注入为当前轮次的 steering hint（不累积进 session 历史，避免污染上下文）。多条提醒合并为一条消息。
