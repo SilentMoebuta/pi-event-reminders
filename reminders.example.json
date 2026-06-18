@@ -1,0 +1,28 @@
+{
+  "reminders": [
+    {
+      "id": "no-test-check",
+      "condition": { "type": "turns_since_test", "threshold": 20 },
+      "message": "⚠️ 已经 20 轮没有运行测试了。请立即运行测试套件验证你的修改。",
+      "cooldown": 5
+    },
+    {
+      "id": "uncommitted-check",
+      "condition": { "type": "uncommitted_files", "threshold": 5 },
+      "message": "⚠️ 已有 5 个文件被修改但未提交。建议现在 git commit 保存进度。",
+      "cooldown": 10
+    },
+    {
+      "id": "token-budget-check",
+      "condition": { "type": "token_usage_pct", "threshold": 80 },
+      "message": "⚠️ 上下文窗口已使用 80%。请总结关键进展，准备压缩。",
+      "cooldown": 3
+    },
+    {
+      "id": "consecutive-failure-check",
+      "condition": { "type": "consecutive_failures", "threshold": 3 },
+      "message": "⚠️ 连续 3 个工具执行失败。请停下来重新评估你的方案。",
+      "cooldown": 10
+    }
+  ]
+}
