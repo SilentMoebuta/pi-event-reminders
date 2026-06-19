@@ -1,6 +1,18 @@
 # pi-event-reminders
 
-会话状态监控与智能提醒扩展。根据会话中的关键指标（测试频率、未提交文件数、Token 使用率、连续失败次数），在 agent 开始新轮次时自动注入提醒消息，帮助 agent 保持良好开发习惯。
+会话状态监控与智能提醒扩展（**有状态的条件监控**）。根据会话中的关键指标（测试频率、未提交文件数、Token 使用率、连续失败次数），在 agent 开始新轮次时自动注入提醒消息，帮助 agent 保持良好开发习惯。
+
+## 何时用这个 vs 同类包
+
+这是三个 hook 风格扩展之一，各覆盖不同能力档位：
+
+| 需求 | 用 |
+|---|---|
+| 跨轮累计条件 + cooldown（“已连续 5 轮没跑测试 → 提醒”） | **pi-event-reminders**（本包） |
+| 无状态声明式规则（单次事件匹配 → 单次动作） | pi-hooks-system |
+| 编辑后多步流水线 + retry | pi-auto-fix-loop |
+
+**不要在这里实现简单的无状态规则。** 本包维护 `ReminderState`（含 cooldown Map），基于跨 turn 累积状态评估条件，并通过 `sendMessage` 作为 steering 注入（故意进 session history，而非每轮 system prompt）。无状态的“编辑 src/ 时 warn”规则用 pi-hooks-system 更轻量。反之，pi-hooks-system 无法表达本包的累计条件与 cooldown。
 
 **设计理念：** "被动监控，主动提醒。" 扩展不强制干预 agent 行为，而是在条件满足时注入提醒上下文，让 agent 自主决策。
 
