@@ -232,3 +232,70 @@ export function recordToolResult(
 export function formatReminderMessages(reminders: ReminderDefinition[]): string {
   return reminders.map((r) => `[Reminder: ${r.id}] ${r.message}`).join("\n");
 }
+
+// ── State persistence (survive restart / resume) ────────────────────────────
+// Without persistence, `cooldowns` resets to empty on every pi restart or
+// /resume, so a reminder that just fired (and was on a 5-turn cooldown) fires
+// again immediately on the next turn — nag storm. We persist the durable
+// counters (turnsSinceLastTest, consecutiveFailures, cooldowns) to a tiny
+// project-local JSON file and rehydrate on session_start when reason is
+// "resume" or "startup".
+//
+// uncommittedFileCount / currentTokenUsagePct are per-turn ephemeral (re-read
+// each turn) so they are NOT persisted.
+
+const STATE_RELATIVE_PATH = path.join(".pi", "reminders-state.json");
+
+/** Project-local path for the persisted reminder state. */
+export function stateFilePath(cwd: string): string {
+  return path.join(cwd, STATE_RELATIVE_PATH);
+}
+
+/** Serialize the durable parts of state to a plain JSON object. */
+export function serializeState(state: ReminderState): Record<string, unknown> {
+  return {
+    turnsSinceLastTest: state.turnsSinceLastTest,
+    consecutiveFailures: state.consecutiveFailures,
+    cooldowns: Object.fromEntries(state.cooldowns),
+  };
+}
+
+/** Deserialize a previously persisted state object back into ReminderState.
+ *  Falls back to initial state for any missing/invalid field. */
+export function deserializeState(data: unknown): ReminderState {
+  const s = createInitialState();
+  if (!data || typeof data !== "object") return s;
+  const d = data as Record<string, unknown>;
+  if (typeof d.turnsSinceLastTest === "number") s.turnsSinceLastTest = d.turnsSinceLastTest;
+  if (typeof d.consecutiveFailures === "number") s.consecutiveFailures = d.consecutiveFailures;
+  if (d.cooldowns && typeof d.cooldowns === "object") {
+    for (const [k, v] of Object.entries(d.cooldowns as Record<string, unknown>)) {
+      if (typeof v === "number" && v > 0) s.cooldowns.set(k, v);
+    }
+  }
+  return s;
+}
+
+/** Persist durable state to <cwd>/.pi/reminders-state.json (best-effort). */
+export function persistState(cwd: string, state: ReminderState): void {
+  try {
+    const filePath = stateFilePath(cwd);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(serializeState(state)));
+  } catch (err) {
+    // ponytail: best-effort persistence; never break the agent turn over state IO
+    console.error("[event-reminders] state persist failed:", err);
+  }
+}
+
+/** Rehydrate durable state from disk, or return a fresh initial state. */
+export function rehydrateState(cwd: string): ReminderState {
+  try {
+    const filePath = stateFilePath(cwd);
+    if (!fs.existsSync(filePath)) return createInitialState();
+    const raw = fs.readFileSync(filePath, "utf-8");
+    return deserializeState(JSON.parse(raw));
+  } catch {
+    return createInitialState();
+  }
+}

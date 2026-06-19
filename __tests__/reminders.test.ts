@@ -452,3 +452,97 @@ describe("recordToolResult — failed test command", () => {
     assert.strictEqual(state.consecutiveFailures, 1);
   });
 });
+
+// ── State persistence (survive restart / resume) ────────────────────────────
+
+import {
+  serializeState,
+  deserializeState,
+  persistState,
+  rehydrateState,
+  stateFilePath,
+} from "../reminders";
+
+describe("cooldown persistence", () => {
+  const tempDirs: string[] = [];
+  function makeTempDir(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "reminders-state-"));
+    tempDirs.push(dir);
+    return dir;
+  }
+  afterEach(() => {
+    for (const d of tempDirs) fs.rmSync(d, { recursive: true, force: true });
+    tempDirs.length = 0;
+  });
+
+  it("serialize/deserialize round-trip preserves cooldowns + counters", () => {
+    const state = makeState({ turnsSinceLastTest: 7, consecutiveFailures: 2 });
+    state.cooldowns.set("r1", 5);
+    state.cooldowns.set("r2", 10);
+    const restored = deserializeState(serializeState(state));
+    assert.strictEqual(restored.turnsSinceLastTest, 7);
+    assert.strictEqual(restored.consecutiveFailures, 2);
+    assert.strictEqual(restored.cooldowns.get("r1"), 5);
+    assert.strictEqual(restored.cooldowns.get("r2"), 10);
+  });
+
+  it("deserialize drops zero-valued cooldowns (treated as not-on-cooldown)", () => {
+    const state = makeState();
+    state.cooldowns.set("r1", 0);
+    state.cooldowns.set("r2", 3);
+    const restored = deserializeState(serializeState(state));
+    assert.strictEqual(restored.cooldowns.has("r1"), false);
+    assert.strictEqual(restored.cooldowns.get("r2"), 3);
+  });
+
+  it("deserialize of malformed/empty data returns a fresh initial state", () => {
+    assert.deepStrictEqual(deserializeState(null), createInitialState());
+    assert.deepStrictEqual(deserializeState({}), createInitialState());
+    assert.deepStrictEqual(deserializeState("garbage"), createInitialState());
+  });
+
+  it("rehydrateState returns initial state when no file exists", () => {
+    const dir = makeTempDir();
+    const s = rehydrateState(dir);
+    assert.strictEqual(s.cooldowns.size, 0);
+    assert.strictEqual(s.turnsSinceLastTest, 0);
+  });
+
+  it("persistState writes a file and rehydrateState reads it back", () => {
+    const dir = makeTempDir();
+    const state = makeState({ turnsSinceLastTest: 12, consecutiveFailures: 4 });
+    state.cooldowns.set("r1", 5);
+    persistState(dir, state);
+    // File written at .pi/reminders-state.json
+    assert.ok(fs.existsSync(stateFilePath(dir)));
+    const restored = rehydrateState(dir);
+    assert.strictEqual(restored.turnsSinceLastTest, 12);
+    assert.strictEqual(restored.consecutiveFailures, 4);
+    assert.strictEqual(restored.cooldowns.get("r1"), 5);
+  });
+
+  it("rehydrateState on a fresh restart restores cooldowns (prevents nag storm)", () => {
+    // Simulate: reminder r1 just fired and was put on a 5-turn cooldown.
+    const dir = makeTempDir();
+    const before = makeState({ turnsSinceLastTest: 1 });
+    before.cooldowns.set("r1", 5);
+    persistState(dir, before);
+
+    // Simulate pi restart: a brand-new process calls rehydrateState.
+    const after = rehydrateState(dir);
+    assert.strictEqual(after.cooldowns.get("r1"), 5, "cooldown must survive restart");
+    // And a reminder still in cooldown must NOT re-fire immediately.
+    const config = makeConfig();
+    const matched = evaluateConditions(after, config);
+    assert.ok(
+      !matched.some((r) => r.id === "r1"),
+      "r1 must still be in cooldown after restart (no nag storm)",
+    );
+  });
+
+  it("persistState does not throw on a read-only/missing dir (best-effort)", () => {
+    // Pointing at an impossible path should not raise — best-effort.
+    persistState("/nonexistent-root-dir/nope", makeState());
+    assert.ok(true);
+  });
+});

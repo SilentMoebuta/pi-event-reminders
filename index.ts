@@ -7,6 +7,8 @@ import {
   decrementCooldowns,
   recordToolResult,
   formatReminderMessages,
+  persistState,
+  rehydrateState,
   type ReminderState,
   type RemindersConfig,
 } from "./reminders";
@@ -58,9 +60,16 @@ export default function (pi: ExtensionAPI) {
 
   // ── session_start ──────────────────────────────────────────────────────
 
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", async (event, ctx) => {
     config = loadConfigFor(ctx);
-    state = createInitialState();
+    // Rehydrate durable state (cooldowns + counters) on restart/resume so a
+    // reminder that just fired doesn't immediately fire again. Fresh state
+    // for "new"/"fork"/"reload" sessions.
+    if (event.reason === "resume" || event.reason === "startup") {
+      state = rehydrateState(ctx.cwd);
+    } else {
+      state = createInitialState();
+    }
     if (config.reminders.length > 0) {
       ctx.ui.notify(
         `event-reminders: ${config.reminders.length} reminders loaded`,
@@ -81,6 +90,9 @@ export default function (pi: ExtensionAPI) {
 
     const matched = evaluateConditions(state, config);
     applyCooldowns(state, matched);
+
+    // Persist durable state once per turn so cooldowns survive restart/resume.
+    persistState(ctx.cwd, state);
 
     if (matched.length > 0) {
       // Inject as a steering hint for the current turn (does NOT accumulate
@@ -104,5 +116,11 @@ export default function (pi: ExtensionAPI) {
     // Use the real isError field (not fabricated event.error/event.result).
     const failed = event.isError;
     recordToolResult(state, event.toolName, command, failed);
+  });
+
+  // Belt-and-suspenders: persist state on shutdown so a crash after the last
+  // turn still captures the latest cooldowns.
+  pi.on("session_shutdown", async (_event, ctx) => {
+    persistState(ctx.cwd, state);
   });
 }
