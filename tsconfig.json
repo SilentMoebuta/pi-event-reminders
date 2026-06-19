@@ -1,1 +1,1 @@
-{"compilerOptions": {"target": "ES2022", "module": "commonjs", "lib": ["ES2022"], "strict": true, "types": ["node"], "esModuleInterop": true, "skipLibCheck": true, "noEmit": true, "moduleResolution": "bundler"}, "include": ["index.ts", "reminders.ts", "__tests__/**/*.ts"]}
+{"compilerOptions": {"target": "ES2022", "module": "commonjs", "lib": ["ES2022"], "strict": true, "types": ["node"], "esModuleInterop": true, "skipLibCheck": true, "noEmit": true, "moduleResolution": "bundler"}, "include": ["index.ts", "reminders.ts", "pi-types.d.ts", "__tests__/**/*.ts"]}
